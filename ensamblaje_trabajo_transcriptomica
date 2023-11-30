@@ -1,0 +1,62 @@
+# Analisis fastqc
+fastqc control.fastq.gz
+fastqc HH18.fastq.gz
+fastqc HH21.fastq.gz
+
+#Segun los datos del analisis fastqc se toman las decisiones hipoteticas de hacer el trimado asi:
+
+# Trimado de secuencias
+java -jar /usr/local/bin/trimmomatic-0.39.jar SE control.fastq.gz control_trimmed.fastq.gz ILLUMINACLIP:/home/clase/adapters/TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:40 HEADCROP:6
+java -jar /usr/local/bin/trimmomatic-0.39.jar SE HH18.fastq.gz HH18_trimmed.fastq.gz ILLUMINACLIP:/home/clase/adapters/TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:40 HEADCROP:6
+java -jar /usr/local/bin/trimmomatic-0.39.jar SE HH21.fastq.gz HH21_trimmed.fastq.gz ILLUMINACLIP:/home/clase/adapters/TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:40 HEADCROP:6
+
+# Analisis fastqc de las secuencias trimadas
+fastqc control_trimmed.fastq.gz
+fastqc HH18_trimmed.fastq.gz
+fastqc HH21_trimmed.fastq.gz
+
+# Arreglar las secuencias sobre representadas con prinseq
+prinseq-lite.pl -fastq control_trimmed.fastq.gz -derep 1 -derep_min 3000 -out_good control_trimmed_prin.fastq -min_len 36
+prinseq-lite.pl -fastq HH18_trimmed.fastq.gz -derep 1 -derep_min 3000 -out_good HH18_trimmed_prin.fastq -min_len 36
+prinseq-lite.pl -fastq HH21_trimmed.fastq.gz -derep 1 -derep_min 3000 -out_good HH21_trimmed_prin.fastq -min_len 36
+
+#----------------------------------Ensamblaje trancriptoma Eucariota--------------------------------------------------------#
+
+#Para anotar los sitios de splicing se debe correr desde la carpeta de index y se está usando script de python hisat2
+extract_splice_sites.py transcriptoma_v2.gff > ref.ss
+extract_exons.py transcriptoma_v2.gff > ref.exon
+
+#Crear la base de datos necesaria para hisat2
+hisat2-build -p 32 --ss ref.ss --exon ref.exon cds_from_genomic.fna transcriptome_hisat
+
+#Ensamblaje Hisat
+hisat2 -p 32 -x ../index/transcriptome_hisat -q control_trimmed_prin.fastq -S control_output_hisat.sam --novel-splicesite-outfile hisat --dta
+hisat2 -p 32 -x ../index/transcriptome_hisat -q HH18_trimmed_prin.fastq -S HH18_output_hisat.sam --novel-splicesite-outfile hisat --dta
+hisat2 -p 32 -x ../index/transcriptome_hisat -q HH21_trimmed_prin.fastq -S HH21_output_hisat.sam --novel-splicesite-outfile hisat --dta
+
+
+#-------------------------------Ordenamiento de las secuencias------------------------------------------------------------#
+
+#Ordenar las secuencias del archivo SAM
+samtools view -bS -o control_output_hisat.bam control_output_hisat.sam
+samtools sort control_output_hisat.bam control_output_hisat_sort.bam
+
+samtools view -bS -o HH18_output_hisat.bam HH18_output_hisat.sam
+samtools sort HH18_output_hisat.bam HH18_output_hisat_sort.bam
+
+samtools view -bS -o HH21_output_hisat.bam HH21_output_hisat.sam
+samtools sort HH21_output_hisat.bam HH21_output_hisat_sort.bam
+
+#---------------------------------------Conteo de secuencias--------------------------------------------#
+#El conteo solo se hace luego de el ordenamiento con samtools 
+#para hacer el conteo se usa htseq
+htseq-count --strand=no --format bam control_output_hisat_sort.bam ..index/transcriptoma_v2.gff > control_htseq_count.txt
+htseq-count --strand=no --format bam HH18_output_hisat_sort.bam ..index/transcriptoma_v2.gff > HH18_htseq_count.txt
+htseq-count --strand=no --format bam HH21_output_hisat_sort.bam ..index/transcriptoma_v2.gff > HH21_htseq_count.txt
+
+
+
+
+
+
+
